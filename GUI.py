@@ -147,6 +147,11 @@ QPushButton[cellState="2"] {
 """
 
 
+STATE_WHITE = 0
+STATE_BLACK = 1
+STATE_BLOCKED = 2
+
+
 def output_coordinates(matrix, n):
     grid = matrix.reshape((n, n))
     coordinates = []
@@ -159,6 +164,43 @@ def output_coordinates(matrix, n):
 
 def find_coordinates(index, n):
     return index // n + 1, index % n + 1
+
+
+def build_random_classic_level(n, rng):
+    A = generate_matrix(n) % 2
+    moves = rng.integers(0, 2, size=(n * n, 1), dtype=int)
+    if not moves.any():
+        moves[rng.integers(0, n * n), 0] = 1
+    board = (A @ moves) % 2
+    return board.reshape(-1).tolist()
+
+
+def build_random_irregular_level(n, rng):
+    min_active = max(3, n)
+    for _ in range(100):
+        active_mask = rng.random(n * n) > 0.35
+        if active_mask.sum() < min_active:
+            continue
+
+        template = np.full(n * n, STATE_BLOCKED, dtype=int)
+        template[active_mask] = STATE_BLACK
+        reduced_A, _, _, dict_index = generate_matrix_2(n, template.reshape((n, n)))
+
+        moves = rng.integers(0, 2, size=(active_mask.sum(), 1), dtype=int)
+        if not moves.any():
+            moves[rng.integers(0, active_mask.sum()), 0] = 1
+
+        board = np.full(n * n, STATE_BLOCKED, dtype=int)
+        board_values = (reduced_A @ moves) % 2
+        for reduced_index, original_index in dict_index.items():
+            board[original_index] = int(board_values[reduced_index, 0])
+
+        return board.tolist()
+
+    board = np.full(n * n, STATE_BLOCKED, dtype=int)
+    keep = rng.choice(n * n, size=min_active, replace=False)
+    board[keep] = 1
+    return board.tolist()
 
 
 class Worker(QThread):
@@ -189,11 +231,13 @@ class Worker(QThread):
             x, status = gf2_gauss_jordan(A_1, matrix)
             if status != "无解":
                 lines = [status, "", "建议点击坐标"]
+                solution_count = 0
                 for index, value in enumerate(x):
                     if value == 1:
+                        solution_count += 1
                         row, col = find_coordinates(dict_index[index], self.n_value)
-                        lines.append(f"{len(lines) - 2}. ({row}, {col})")
-                if len(lines) == 3:
+                        lines.append(f"{solution_count}. ({row}, {col})")
+                if solution_count == 0:
                     lines.append("当前棋盘已经是目标状态，无需操作。")
             else:
                 lines = [status, "", "异形模式下该局面不存在可行解。"]
@@ -210,6 +254,7 @@ class GridApp(QWidget):
         self.started = False
         self.n_value = None
         self.worker = None
+        self.rng = np.random.default_rng()
         self.init_ui()
 
     def init_ui(self):
@@ -230,7 +275,7 @@ class GridApp(QWidget):
         title_label = QLabel("FlipSolver")
         title_label.setObjectName("titleLabel")
         subtitle_label = QLabel(
-            "求解行列翻转棋盘。先设置局面，再切换到求解阶段，让线性方程组给出可行点击序列。"
+            "求解行列翻转棋盘。支持随机经典关卡和随机异形关卡，可以直接进入游玩与求解。"
         )
         subtitle_label.setWordWrap(True)
         subtitle_label.setObjectName("subtitleLabel")
@@ -245,7 +290,7 @@ class GridApp(QWidget):
 
         control_panel = QFrame()
         control_panel.setObjectName("panel")
-        control_panel.setFixedWidth(340)
+        control_panel.setFixedWidth(360)
         control_layout = QVBoxLayout(control_panel)
         control_layout.setContentsMargins(22, 22, 22, 22)
         control_layout.setSpacing(16)
@@ -259,17 +304,17 @@ class GridApp(QWidget):
         self.input_box.returnPressed.connect(self.create_grid)
         control_layout.addWidget(self.input_box)
 
-        size_hint = QLabel("建议使用 3 到 8 的大小，便于观察和求解。")
+        size_hint = QLabel("建议使用 4 到 8 的大小，既有可玩性也方便观察。")
         size_hint.setObjectName("hintLabel")
         size_hint.setWordWrap(True)
         control_layout.addWidget(size_hint)
 
-        self.generate_button = QPushButton("生成棋盘", self)
+        self.generate_button = QPushButton("生成空白棋盘", self)
         self.generate_button.setObjectName("primaryButton")
         self.generate_button.clicked.connect(self.create_grid)
         control_layout.addWidget(self.generate_button)
 
-        mode_title = QLabel("求解模式")
+        mode_title = QLabel("模式")
         mode_title.setObjectName("sectionTitle")
         control_layout.addWidget(mode_title)
 
@@ -279,19 +324,35 @@ class GridApp(QWidget):
         self.special_mode = QRadioButton("异形模式")
         self.mode_group.addButton(self.classic_mode, 1)
         self.mode_group.addButton(self.special_mode, 2)
+        self.classic_mode.toggled.connect(self.handle_mode_change)
         control_layout.addWidget(self.classic_mode)
         control_layout.addWidget(self.special_mode)
 
-        mode_hint = QLabel("异形模式会把非黑色格子锁定成不可操作区域。")
+        mode_hint = QLabel("经典模式只有黑白两态；异形模式允许灰色禁用格。")
         mode_hint.setObjectName("hintLabel")
         mode_hint.setWordWrap(True)
         control_layout.addWidget(mode_hint)
+
+        random_title = QLabel("随机关卡")
+        random_title.setObjectName("sectionTitle")
+        control_layout.addWidget(random_title)
+
+        self.random_current_button = QPushButton("随机生成当前模式关卡", self)
+        self.random_current_button.setObjectName("accentButton")
+        self.random_current_button.clicked.connect(self.randomize_current_mode)
+        self.random_classic_button = QPushButton("随机经典关卡", self)
+        self.random_classic_button.clicked.connect(self.randomize_classic_mode)
+        self.random_special_button = QPushButton("随机异形关卡", self)
+        self.random_special_button.clicked.connect(self.randomize_special_mode)
+        control_layout.addWidget(self.random_current_button)
+        control_layout.addWidget(self.random_classic_button)
+        control_layout.addWidget(self.random_special_button)
 
         action_title = QLabel("操作流程")
         action_title.setObjectName("sectionTitle")
         control_layout.addWidget(action_title)
 
-        self.start_button = QPushButton("开始求解阶段", self)
+        self.start_button = QPushButton("开始游玩", self)
         self.start_button.clicked.connect(self.start_game)
         self.solve_button = QPushButton("计算解", self)
         self.solve_button.setObjectName("accentButton")
@@ -342,7 +403,7 @@ class GridApp(QWidget):
         board_title_box.setSpacing(4)
         board_title = QLabel("棋盘")
         board_title.setObjectName("sectionTitle")
-        board_subtitle = QLabel("编辑阶段单点切换，求解阶段按规则翻转同行、同列与自身。")
+        board_subtitle = QLabel("编辑阶段可手动布置关卡；游玩阶段点击格子会翻转同行、同列与自身。")
         board_subtitle.setObjectName("hintLabel")
         board_subtitle.setWordWrap(True)
         board_title_box.addWidget(board_title)
@@ -356,8 +417,9 @@ class GridApp(QWidget):
         board_header.addWidget(self.board_meta)
         board_layout.addLayout(board_header)
 
-        self.board_hint = QLabel("先输入大小并生成棋盘。")
+        self.board_hint = QLabel("先输入大小并生成棋盘，或者直接随机一局。")
         self.board_hint.setObjectName("hintLabel")
+        self.board_hint.setWordWrap(True)
         board_layout.addWidget(self.board_hint)
 
         self.board_container = QWidget()
@@ -369,23 +431,36 @@ class GridApp(QWidget):
 
         content_layout.addWidget(board_panel, 1)
 
-    def create_grid(self):
-        if self.grid is not None:
-            self.clear_existing_grid()
+    def current_mode(self):
+        return self.mode_group.checkedId()
 
+    def parse_board_size(self):
+        text = self.input_box.text().strip()
+        if not text:
+            return 5
+        n = int(text)
+        if n <= 0:
+            raise ValueError
+        return n
+
+    def create_grid(self):
         try:
-            n = int(self.input_box.text())
-            if n <= 0:
-                raise ValueError
+            n = self.parse_board_size()
         except ValueError:
             QMessageBox.warning(self, "输入错误", "请输入有效的正整数网格大小。")
             return
+        self.create_grid_with_state(n, [STATE_WHITE] * (n * n), clear_result=True)
+
+    def create_grid_with_state(self, n, state, clear_result=False):
+        if self.grid is not None:
+            self.clear_existing_grid()
 
         self.n_value = n
         self.started = False
-        self.grid_state = [0] * (n * n)
+        self.grid_state = list(state)
         self.cell_buttons = []
-        self.result_box.clear()
+        if clear_result:
+            self.result_box.clear()
 
         self.grid = QGridLayout()
         self.grid.setSpacing(8)
@@ -401,16 +476,18 @@ class GridApp(QWidget):
                 button.setFixedSize(button_size, button_size)
                 button.clicked.connect(lambda _, idx=index: self.toggle_state(idx))
                 self.cell_buttons.append(button)
-                self.set_cell_state(index, 0)
                 self.grid.addWidget(button, i, j)
 
         board_widget = QWidget()
         board_widget.setLayout(self.grid)
         self.board_wrapper.addWidget(board_widget, alignment=Qt.AlignCenter)
 
+        for index, cell_state in enumerate(self.grid_state):
+            self.set_cell_state(index, cell_state)
+
         self.update_status_text("编辑中")
         self.board_meta.setText(f"{n} x {n}")
-        self.board_hint.setText("白色表示关闭，深色表示开启，灰色表示异形模式下的锁定区域。")
+        self.update_board_hint()
 
     def clear_existing_grid(self):
         while self.board_wrapper.count():
@@ -427,21 +504,32 @@ class GridApp(QWidget):
         button.style().unpolish(button)
         button.style().polish(button)
         button.update()
-        button.setEnabled(state != 2)
+        button.setEnabled(state != STATE_BLOCKED or not self.started)
 
     def toggle_state(self, index):
         if not self.grid_state:
             return
-
         if self.started:
             self.apply_move(index)
         else:
-            current = self.grid_state[index]
-            if current == 2:
-                return
-            self.set_cell_state(index, 0 if current == 1 else 1)
+            self.toggle_edit_state(index)
+
+    def toggle_edit_state(self, index):
+        current = self.grid_state[index]
+        if self.current_mode() == 1:
+            next_state = STATE_WHITE if current == STATE_BLACK else STATE_BLACK
+        else:
+            next_state = {
+                STATE_WHITE: STATE_BLACK,
+                STATE_BLACK: STATE_BLOCKED,
+                STATE_BLOCKED: STATE_WHITE,
+            }[current]
+        self.set_cell_state(index, next_state)
 
     def apply_move(self, index):
+        if self.grid_state[index] == STATE_BLOCKED:
+            return
+
         n = self.n_value
         row, col = divmod(index, n)
         affected = set()
@@ -452,57 +540,110 @@ class GridApp(QWidget):
         affected.add(index)
 
         for affected_index in affected:
-            if self.grid_state[affected_index] == 2:
+            if self.grid_state[affected_index] == STATE_BLOCKED:
                 continue
-            self.set_cell_state(affected_index, 0 if self.grid_state[affected_index] == 1 else 1)
+            next_state = STATE_WHITE if self.grid_state[affected_index] == STATE_BLACK else STATE_BLACK
+            self.set_cell_state(affected_index, next_state)
+
+    def handle_mode_change(self):
+        if self.current_mode() == 1 and self.grid_state:
+            for index, state in enumerate(self.grid_state):
+                if state == STATE_BLOCKED:
+                    self.set_cell_state(index, STATE_WHITE)
+        self.update_board_hint()
+
+    def update_board_hint(self):
+        if not self.grid_state:
+            self.board_hint.setText("先输入大小并生成棋盘，或者直接随机一局。")
+            return
+
+        if self.started:
+            if self.current_mode() == 1:
+                self.board_hint.setText("经典模式游玩中：点击会翻转同行、同列与自身。")
+            else:
+                self.board_hint.setText("异形模式游玩中：灰色格子不会参与点击和翻转。")
+            return
+
+        if self.current_mode() == 1:
+            self.board_hint.setText("经典模式编辑中：点击格子切换黑白。")
+        else:
+            self.board_hint.setText("异形模式编辑中：点击格子按 白色 -> 深色 -> 灰色禁用 循环。")
 
     def start_game(self):
         if not self.grid_state:
             QMessageBox.warning(self, "提示", "请先生成棋盘。")
             return
-
         self.started = True
-        if self.special_mode.isChecked():
-            self.lock_non_black_buttons()
-            self.board_hint.setText("异形模式已生效：只有深色格子保留为可操作区域。")
-        else:
-            self.board_hint.setText("求解阶段中，点击任意格子会翻转同行、同列与自身。")
-        self.update_status_text("求解阶段")
+        for index, state in enumerate(self.grid_state):
+            self.set_cell_state(index, state)
+        self.update_status_text("游玩中")
+        self.update_board_hint()
 
     def end_game(self):
         if not self.grid_state:
             return
         self.started = False
+        for index, state in enumerate(self.grid_state):
+            self.set_cell_state(index, state)
         self.update_status_text("编辑中")
-        self.board_hint.setText("已回到编辑阶段，可以继续调整初始局面。")
-
-    def lock_non_black_buttons(self):
-        for index, value in enumerate(self.grid_state):
-            if value != 1:
-                self.set_cell_state(index, 2)
+        self.update_board_hint()
 
     def reset_board(self):
         if not self.grid_state:
             return
-
         self.started = False
+        fill_state = STATE_WHITE
+        self.grid_state = [fill_state] * len(self.grid_state)
         for index in range(len(self.grid_state)):
-            self.set_cell_state(index, 0)
+            self.set_cell_state(index, fill_state)
         self.result_box.clear()
         self.update_status_text("编辑中")
-        self.board_hint.setText("棋盘已清空，可以重新设置局面。")
+        self.update_board_hint()
+
+    def randomize_current_mode(self):
+        mode = self.current_mode()
+        if mode == 1:
+            self.randomize_classic_mode()
+        else:
+            self.randomize_special_mode()
+
+    def randomize_classic_mode(self):
+        self.classic_mode.setChecked(True)
+        self.generate_random_level(1)
+
+    def randomize_special_mode(self):
+        self.special_mode.setChecked(True)
+        self.generate_random_level(2)
+
+    def generate_random_level(self, mode):
+        try:
+            n = self.parse_board_size()
+        except ValueError:
+            QMessageBox.warning(self, "输入错误", "请输入有效的正整数网格大小。")
+            return
+
+        if mode == 1:
+            state = build_random_classic_level(n, self.rng)
+        else:
+            state = build_random_irregular_level(n, self.rng)
+
+        self.create_grid_with_state(n, state, clear_result=True)
+        self.update_status_text("已生成随机关卡")
+        self.board_hint.setText("随机关卡已生成，可以直接开始游玩，或者先点击“计算解”查看答案。")
 
     def save_state(self):
         if not self.grid_state:
             QMessageBox.warning(self, "提示", "请先生成棋盘。")
             return
 
-        if self.special_mode.isChecked():
-            self.lock_non_black_buttons()
+        mode = self.current_mode()
+        if mode == 1:
+            matrix = np.array([0 if value == STATE_BLOCKED else value for value in self.grid_state], dtype=int).reshape(-1, 1)
+            matrix0 = matrix.reshape((self.n_value, self.n_value))
+        else:
+            matrix = np.array(self.grid_state, dtype=int).reshape(-1, 1)
+            matrix0 = matrix.reshape((self.n_value, self.n_value))
 
-        mode = self.mode_group.checkedId()
-        matrix = np.array(self.grid_state).reshape(-1, 1)
-        matrix0 = matrix.reshape((self.n_value, self.n_value))
         self.run_worker(matrix, self.n_value, matrix0, mode)
 
     def run_worker(self, matrix, n, matrix0, mode):
