@@ -30,7 +30,7 @@ QWidget {
     background: #f4efe7;
     color: #26211b;
     font-family: "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
-    font-size: 15px;
+    font-size: 17px;
 }
 QFrame#panel {
     background: #fbf8f3;
@@ -50,25 +50,25 @@ QLineEdit {
     background: #fffdf8;
     border: 1px solid #d7ccbb;
     border-radius: 14px;
-    padding: 12px 14px;
-    font-size: 16px;
+    padding: 14px 16px;
+    font-size: 19px;
 }
 QTextEdit {
     background: #fffdf8;
     border: 1px solid #ded3c4;
     border-radius: 18px;
-    padding: 10px;
-    font-size: 15px;
+    padding: 14px;
+    font-size: 17px;
 }
 QPushButton {
     border: none;
     border-radius: 16px;
-    padding: 12px 16px;
+    padding: 14px 18px;
     background: #e8dece;
     color: #2d261f;
     font-weight: 600;
-    font-size: 15px;
-    min-height: 48px;
+    font-size: 17px;
+    min-height: 54px;
 }
 QPushButton:hover {
     background: #ddd0bb;
@@ -96,11 +96,11 @@ QPushButton#ghostButton {
 }
 QRadioButton {
     spacing: 8px;
-    font-size: 15px;
+    font-size: 17px;
 }
 QRadioButton::indicator {
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
 }
 QRadioButton::indicator:unchecked {
     border: 2px solid #c5b8a4;
@@ -113,29 +113,29 @@ QRadioButton::indicator:checked {
     background: #1f6f5f;
 }
 QLabel#titleLabel {
-    font-size: 36px;
+    font-size: 42px;
     font-weight: 800;
     color: #201a14;
 }
 QLabel#subtitleLabel {
-    font-size: 17px;
+    font-size: 20px;
     color: #6a5e52;
 }
 QLabel#sectionTitle {
-    font-size: 20px;
+    font-size: 24px;
     font-weight: 700;
 }
 QLabel#hintLabel {
-    font-size: 14px;
+    font-size: 16px;
     color: #7a6f62;
 }
 QLabel#statusBadge {
     background: #efe5d5;
     color: #74562f;
     border-radius: 14px;
-    padding: 8px 12px;
+    padding: 10px 14px;
     font-weight: 700;
-    font-size: 14px;
+    font-size: 16px;
 }
 QPushButton[cellState="0"] {
     background: #fffef9;
