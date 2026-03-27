@@ -47,11 +47,13 @@
 - 每次点击对整行、整列和自身的翻转效果，写入系数矩阵
 - 最终用 `GF(2)` 上的高斯-约旦消元求解
 
-核心文件：
+项目结构：
 
-- `GUI.py`：图形界面与交互逻辑
-- `buildMatrix.py`：构造经典模式和异形模式的系数矩阵
-- `solve_equation.py`：在 `GF(2)` 上解线性方程组
+- `main.py`：应用入口
+- `flipsolver/gui.py`：图形界面与交互逻辑
+- `flipsolver/levels.py`：随机经典/异形关卡生成
+- `flipsolver/matrix.py`：构造经典模式和异形模式的系数矩阵
+- `flipsolver/solver.py`：在 `GF(2)` 上解线性方程组
 
 ## 运行方式
 
@@ -64,7 +66,7 @@ pip install -r requirements.txt
 ### 2. 启动程序
 
 ```bash
-python GUI.py
+python main.py
 ```
 
 ## 使用说明
