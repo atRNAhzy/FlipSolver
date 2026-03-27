@@ -7,7 +7,6 @@ from PyQt5.QtWidgets import (
     QApplication,
     QBoxLayout,
     QButtonGroup,
-    QComboBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -27,11 +26,9 @@ from .matrix import generate_matrix, generate_matrix_2
 from .solver import gf2_gauss_jordan
 
 
-STYLE_SCALES = {
-    "标准": 1.0,
-    "大字体": 1.18,
-    "演示模式": 1.36,
-}
+MIN_USER_SCALE = 0.9
+MAX_USER_SCALE = 1.8
+DEFAULT_USER_SCALE = 1.25
 
 
 def make_app_style(scale):
@@ -258,13 +255,14 @@ class GridApp(QWidget):
         self.n_value = None
         self.worker = None
         self.rng = np.random.default_rng()
-        self.current_scale = STYLE_SCALES["演示模式"]
+        self.user_scale = DEFAULT_USER_SCALE
+        self.applied_scale = None
         self.init_ui()
 
     def init_ui(self):
         self.setWindowTitle("FlipSolver")
         self.resize(1180, 760)
-        self.apply_scale_style()
+        self.apply_scale_style(force=True)
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(28, 24, 28, 24)
@@ -343,11 +341,25 @@ class GridApp(QWidget):
         scale_title.setObjectName("sectionTitle")
         control_layout.addWidget(scale_title)
 
-        self.scale_box = QComboBox(self)
-        self.scale_box.addItems(STYLE_SCALES.keys())
-        self.scale_box.setCurrentText("演示模式")
-        self.scale_box.currentTextChanged.connect(self.change_scale)
-        control_layout.addWidget(self.scale_box)
+        scale_buttons = QHBoxLayout()
+        scale_buttons.setSpacing(10)
+        self.zoom_out_button = QPushButton("A-", self)
+        self.zoom_out_button.setObjectName("ghostButton")
+        self.zoom_out_button.clicked.connect(lambda: self.adjust_scale(-0.08))
+        self.zoom_reset_button = QPushButton("重置", self)
+        self.zoom_reset_button.setObjectName("ghostButton")
+        self.zoom_reset_button.clicked.connect(self.reset_scale)
+        self.zoom_in_button = QPushButton("A+", self)
+        self.zoom_in_button.setObjectName("ghostButton")
+        self.zoom_in_button.clicked.connect(lambda: self.adjust_scale(0.08))
+        scale_buttons.addWidget(self.zoom_out_button)
+        scale_buttons.addWidget(self.zoom_reset_button)
+        scale_buttons.addWidget(self.zoom_in_button)
+        control_layout.addLayout(scale_buttons)
+
+        self.scale_hint = QLabel("", self)
+        self.scale_hint.setObjectName("hintLabel")
+        control_layout.addWidget(self.scale_hint)
 
         random_title = QLabel("随机关卡")
         random_title.setObjectName("sectionTitle")
@@ -452,12 +464,35 @@ class GridApp(QWidget):
     def current_mode(self):
         return self.mode_group.checkedId()
 
-    def apply_scale_style(self):
-        self.setStyleSheet(make_app_style(self.current_scale))
+    def compute_responsive_scale(self):
+        width_scale = self.width() / 1180 if self.width() > 0 else 1.0
+        height_scale = self.height() / 760 if self.height() > 0 else 1.0
+        responsive_scale = min(width_scale, height_scale)
+        responsive_scale = max(0.88, min(1.3, responsive_scale))
+        return self.user_scale * responsive_scale
 
-    def change_scale(self, label):
-        self.current_scale = STYLE_SCALES[label]
-        self.apply_scale_style()
+    def update_scale_hint(self):
+        if hasattr(self, "scale_hint"):
+            self.scale_hint.setText(
+                f"当前缩放 {self.user_scale:.2f}x，窗口变化时会自动联动调整。"
+            )
+
+    def apply_scale_style(self, force=False):
+        final_scale = self.compute_responsive_scale()
+        if not force and self.applied_scale is not None and abs(final_scale - self.applied_scale) < 0.03:
+            return
+        self.applied_scale = final_scale
+        self.setStyleSheet(make_app_style(final_scale))
+        self.update_scale_hint()
+
+    def adjust_scale(self, delta):
+        self.user_scale = max(MIN_USER_SCALE, min(MAX_USER_SCALE, self.user_scale + delta))
+        self.apply_scale_style(force=True)
+        self.update_board_button_sizes()
+
+    def reset_scale(self):
+        self.user_scale = DEFAULT_USER_SCALE
+        self.apply_scale_style(force=True)
         self.update_board_button_sizes()
 
     def parse_board_size(self):
@@ -525,6 +560,7 @@ class GridApp(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.update_layout_mode()
+        self.apply_scale_style()
         self.update_board_button_sizes()
 
     def update_layout_mode(self):
@@ -545,8 +581,9 @@ class GridApp(QWidget):
         available_height = max(260, self.board_container.height() - 40)
         usable_edge = min(available_width, available_height)
         spacing_total = max(0, (self.n_value - 1) * self.grid.spacing())
-        base_min = int(42 * self.current_scale)
-        base_max = int(88 * self.current_scale)
+        scale = self.applied_scale or self.compute_responsive_scale()
+        base_min = int(42 * scale)
+        base_max = int(88 * scale)
         cell_size = max(base_min, min(base_max, int((usable_edge - spacing_total) / max(1, self.n_value))))
 
         for button in self.cell_buttons:
