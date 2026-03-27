@@ -1,4 +1,5 @@
 import sys
+from string import Template
 
 import numpy as np
 from PyQt5.QtCore import QThread, Qt, pyqtSignal
@@ -6,6 +7,7 @@ from PyQt5.QtWidgets import (
     QApplication,
     QBoxLayout,
     QButtonGroup,
+    QComboBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -25,12 +27,21 @@ from .matrix import generate_matrix, generate_matrix_2
 from .solver import gf2_gauss_jordan
 
 
-APP_STYLE = """
+STYLE_SCALES = {
+    "标准": 1.0,
+    "大字体": 1.18,
+    "演示模式": 1.36,
+}
+
+
+def make_app_style(scale):
+    return Template(
+        """
 QWidget {
     background: #f4efe7;
     color: #26211b;
     font-family: "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
-    font-size: 17px;
+    font-size: ${base_font}px;
 }
 QFrame#panel {
     background: #fbf8f3;
@@ -50,25 +61,25 @@ QLineEdit {
     background: #fffdf8;
     border: 1px solid #d7ccbb;
     border-radius: 14px;
-    padding: 14px 16px;
-    font-size: 19px;
+    padding: ${input_padding_y}px ${input_padding_x}px;
+    font-size: ${input_font}px;
 }
 QTextEdit {
     background: #fffdf8;
     border: 1px solid #ded3c4;
     border-radius: 18px;
-    padding: 14px;
-    font-size: 17px;
+    padding: ${text_padding}px;
+    font-size: ${text_font}px;
 }
 QPushButton {
     border: none;
     border-radius: 16px;
-    padding: 14px 18px;
+    padding: ${button_padding_y}px ${button_padding_x}px;
     background: #e8dece;
     color: #2d261f;
     font-weight: 600;
-    font-size: 17px;
-    min-height: 54px;
+    font-size: ${button_font}px;
+    min-height: ${button_height}px;
 }
 QPushButton:hover {
     background: #ddd0bb;
@@ -96,11 +107,11 @@ QPushButton#ghostButton {
 }
 QRadioButton {
     spacing: 8px;
-    font-size: 17px;
+    font-size: ${radio_font}px;
 }
 QRadioButton::indicator {
-    width: 20px;
-    height: 20px;
+    width: ${radio_indicator}px;
+    height: ${radio_indicator}px;
 }
 QRadioButton::indicator:unchecked {
     border: 2px solid #c5b8a4;
@@ -113,29 +124,29 @@ QRadioButton::indicator:checked {
     background: #1f6f5f;
 }
 QLabel#titleLabel {
-    font-size: 42px;
+    font-size: ${title_font}px;
     font-weight: 800;
     color: #201a14;
 }
 QLabel#subtitleLabel {
-    font-size: 20px;
+    font-size: ${subtitle_font}px;
     color: #6a5e52;
 }
 QLabel#sectionTitle {
-    font-size: 24px;
+    font-size: ${section_font}px;
     font-weight: 700;
 }
 QLabel#hintLabel {
-    font-size: 16px;
+    font-size: ${hint_font}px;
     color: #7a6f62;
 }
 QLabel#statusBadge {
     background: #efe5d5;
     color: #74562f;
     border-radius: 14px;
-    padding: 10px 14px;
+    padding: ${badge_padding_y}px ${badge_padding_x}px;
     font-weight: 700;
-    font-size: 16px;
+    font-size: ${badge_font}px;
 }
 QPushButton[cellState="0"] {
     background: #fffef9;
@@ -151,6 +162,27 @@ QPushButton[cellState="2"] {
     color: #6f6356;
 }
 """
+    ).substitute(
+        base_font=int(17 * scale),
+        input_padding_y=int(14 * scale),
+        input_padding_x=int(16 * scale),
+        input_font=int(19 * scale),
+        text_padding=int(14 * scale),
+        text_font=int(17 * scale),
+        button_padding_y=int(14 * scale),
+        button_padding_x=int(18 * scale),
+        button_font=int(17 * scale),
+        button_height=int(54 * scale),
+        radio_font=int(17 * scale),
+        radio_indicator=int(20 * scale),
+        title_font=int(42 * scale),
+        subtitle_font=int(20 * scale),
+        section_font=int(24 * scale),
+        hint_font=int(16 * scale),
+        badge_padding_y=int(10 * scale),
+        badge_padding_x=int(14 * scale),
+        badge_font=int(16 * scale),
+    )
 
 
 STATE_WHITE = 0
@@ -226,12 +258,13 @@ class GridApp(QWidget):
         self.n_value = None
         self.worker = None
         self.rng = np.random.default_rng()
+        self.current_scale = STYLE_SCALES["演示模式"]
         self.init_ui()
 
     def init_ui(self):
         self.setWindowTitle("FlipSolver")
         self.resize(1180, 760)
-        self.setStyleSheet(APP_STYLE)
+        self.apply_scale_style()
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(28, 24, 28, 24)
@@ -305,6 +338,16 @@ class GridApp(QWidget):
         mode_hint.setObjectName("hintLabel")
         mode_hint.setWordWrap(True)
         control_layout.addWidget(mode_hint)
+
+        scale_title = QLabel("显示缩放")
+        scale_title.setObjectName("sectionTitle")
+        control_layout.addWidget(scale_title)
+
+        self.scale_box = QComboBox(self)
+        self.scale_box.addItems(STYLE_SCALES.keys())
+        self.scale_box.setCurrentText("演示模式")
+        self.scale_box.currentTextChanged.connect(self.change_scale)
+        control_layout.addWidget(self.scale_box)
 
         random_title = QLabel("随机关卡")
         random_title.setObjectName("sectionTitle")
@@ -409,6 +452,14 @@ class GridApp(QWidget):
     def current_mode(self):
         return self.mode_group.checkedId()
 
+    def apply_scale_style(self):
+        self.setStyleSheet(make_app_style(self.current_scale))
+
+    def change_scale(self, label):
+        self.current_scale = STYLE_SCALES[label]
+        self.apply_scale_style()
+        self.update_board_button_sizes()
+
     def parse_board_size(self):
         text = self.input_box.text().strip()
         if not text:
@@ -494,7 +545,9 @@ class GridApp(QWidget):
         available_height = max(260, self.board_container.height() - 40)
         usable_edge = min(available_width, available_height)
         spacing_total = max(0, (self.n_value - 1) * self.grid.spacing())
-        cell_size = max(42, min(88, int((usable_edge - spacing_total) / max(1, self.n_value))))
+        base_min = int(42 * self.current_scale)
+        base_max = int(88 * self.current_scale)
+        cell_size = max(base_min, min(base_max, int((usable_edge - spacing_total) / max(1, self.n_value))))
 
         for button in self.cell_buttons:
             button.setFixedSize(cell_size, cell_size)
