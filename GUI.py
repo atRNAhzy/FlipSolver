@@ -1,6 +1,6 @@
 import sys
 from PyQt5.QtWidgets import QApplication, QWidget, QGridLayout, QLineEdit, QPushButton, QVBoxLayout, QMessageBox, \
-    QCheckBox
+    QCheckBox, QLabel, QTextEdit
 from PyQt5.QtGui import QColor
 from PyQt5.QtCore import QThread, pyqtSignal
 from buildMatrix import generate_matrix,generate_matrix_2
@@ -25,7 +25,7 @@ def find_coordinates(a, n):
 
 class Worker(QThread):
     # 定义一个信号用于发送处理结果
-    processed = pyqtSignal(np.ndarray)
+    processed = pyqtSignal(str)
 
     def __init__(self, matrix, n, matrix0, mode):
         super().__init__()
@@ -39,22 +39,28 @@ class Worker(QThread):
             A = generate_matrix(self.n_value)
             x, status = gf2_gauss_jordan(A, self.matrix)
             if status != '无解':
-                print(status)
                 coords = output_coordinates(x, self.n_value)
-                for coord in coords:
-                    print(f"坐标: {coord}")  # 输出坐标
+                message = [status, "建议点击坐标:"]
+                if coords:
+                    message.extend([f"({row}, {col})" for row, col in coords])
+                else:
+                    message.append("当前棋盘已经是目标状态，无需操作。")
             else:
-                print(status)
+                message = [status]
         elif self.mode==2:
             A_1, matrix, n1,dict_index = generate_matrix_2(self.n_value,self.matrix0)
             x,status=gf2_gauss_jordan(A_1,matrix)
             if status != '无解':
-                print(status)
+                message = [status, "建议点击坐标:"]
                 for index,i in enumerate(x):
                     if i==1:
-                        print(find_coordinates(dict_index[index],self.n_value))
+                        row, col = find_coordinates(dict_index[index],self.n_value)
+                        message.append(f"({row}, {col})")
+                if len(message) == 2:
+                    message.append("当前棋盘已经是目标状态，无需操作。")
             else:
-                print(status)
+                message = [status]
+        self.processed.emit("\n".join(message))
 
 
 class GridApp(QWidget):
@@ -87,6 +93,14 @@ class GridApp(QWidget):
         # 添加模式选择的复选框
         self.mode1_checkbox = QCheckBox('经典模式', self)
         self.mode2_checkbox = QCheckBox('异形模式', self)
+        self.mode1_checkbox.setChecked(True)
+        self.mode1_checkbox.toggled.connect(self.syncModeSelection)
+        self.mode2_checkbox.toggled.connect(self.syncModeSelection)
+
+        self.resultLabel = QLabel('求解结果', self)
+        self.resultBox = QTextEdit(self)
+        self.resultBox.setReadOnly(True)
+        self.resultBox.setPlaceholderText('点击“求解”后会在这里显示结果')
 
         # 布局
         self.layout.addWidget(self.inputBox)
@@ -96,9 +110,22 @@ class GridApp(QWidget):
         self.layout.addWidget(self.saveButton)
         self.layout.addWidget(self.mode1_checkbox)
         self.layout.addWidget(self.mode2_checkbox)
+        self.layout.addWidget(self.resultLabel)
+        self.layout.addWidget(self.resultBox)
         self.setLayout(self.layout)
 
         self.grid = None
+
+    def syncModeSelection(self):
+        sender = self.sender()
+        if sender == self.mode1_checkbox and self.mode1_checkbox.isChecked():
+            self.mode2_checkbox.blockSignals(True)
+            self.mode2_checkbox.setChecked(False)
+            self.mode2_checkbox.blockSignals(False)
+        elif sender == self.mode2_checkbox and self.mode2_checkbox.isChecked():
+            self.mode1_checkbox.blockSignals(True)
+            self.mode1_checkbox.setChecked(False)
+            self.mode1_checkbox.blockSignals(False)
 
     def createGrid(self):
         if self.grid:
@@ -117,6 +144,7 @@ class GridApp(QWidget):
             self.grid = QGridLayout()
             self.grid.setSpacing(5)  # 设置网格间距
             self.grid_state = [0] * (n * n)  # 初始化状态为全白（0）
+            self.resultBox.clear()
 
             for i in range(n):
                 for j in range(n):
@@ -221,7 +249,8 @@ class GridApp(QWidget):
         self.worker.start()  # 启动线程
 
     def handleProcessed(self, result):
-        QMessageBox.information(self, '处理结果', f'矩阵的和为: {result}')
+        self.resultBox.setPlainText(result)
+        QMessageBox.information(self, '处理结果', result)
 
 
 if __name__ == '__main__':

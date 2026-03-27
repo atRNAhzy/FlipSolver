@@ -2,13 +2,10 @@ import numpy as np
 
 
 def gf2_gauss_jordan(A, b):
-    # 矩阵大小
-
+    A = np.array(A, dtype=int, copy=True) % 2
+    b = np.array(b, dtype=int, copy=True).reshape(-1, 1) % 2
     rows, cols = A.shape
-
-    # 将 b 合并到 A 中，形成增广矩阵
-
-    A = np.hstack((A, b.reshape(-1, 1)))
+    A = np.hstack((A, b))
 
     rank = 0  # 矩阵的秩
     free_vars = set(range(cols))  # 自由变量的集合
