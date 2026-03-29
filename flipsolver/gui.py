@@ -660,7 +660,7 @@ class GridApp(QWidget):
         if self.current_mode() == 1:
             self.board_hint.setText("经典模式编辑中：点击格子切换黑白。")
         else:
-            self.board_hint.setText("异形模式编辑中：点击格子按 白色 -> 深色 -> 灰色禁用 循环。")
+            self.board_hint.setText("异形模式编辑中：点击格子按 白色 -> 黑色 -> 灰色禁用 循环。")
 
     def start_game(self):
         if not self.grid_state:
@@ -685,10 +685,15 @@ class GridApp(QWidget):
         if not self.grid_state:
             return
         self.started = False
-        fill_state = STATE_WHITE
-        self.grid_state = [fill_state] * len(self.grid_state)
-        for index in range(len(self.grid_state)):
-            self.set_cell_state(index, fill_state)
+
+        if self.current_mode() == 2:
+            new_state = [STATE_BLOCKED if value == STATE_BLOCKED else STATE_WHITE for value in self.grid_state]
+        else:
+            new_state = [STATE_WHITE] * len(self.grid_state)
+
+        self.grid_state = new_state
+        for index, state in enumerate(self.grid_state):
+            self.set_cell_state(index, state)
         self.result_box.clear()
         self.update_status_text("编辑中")
         self.update_board_hint()
